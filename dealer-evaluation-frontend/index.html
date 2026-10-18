@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dealer Evaluation System</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏪 Dealer Evaluation System</h1>
+            <p class="subtitle">Compare prices from multiple dealers</p>
+        </header>
+
+        <main>
+            <!-- Product Selection -->
+            <section class="card">
+                <h2>📦 Select Product</h2>
+                <div class="form-group">
+                    <label for="productSelect">Choose a product:</label>
+                    <select id="productSelect" class="form-control">
+                        <option value="">-- Select a Product --</option>
+                    </select>
+                    <div id="productDetails" class="product-details" style="display: none;">
+                        <h3 id="productName"></h3>
+                        <p id="productDescription"></p>
+                        <span id="productCategory" class="badge"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Dealer Selection -->
+            <section class="card" id="dealerSection" style="display: none;">
+                <h2>🏬 Select Dealer</h2>
+                <div class="form-group">
+                    <label for="dealerSelect">Choose a dealer:</label>
+                    <select id="dealerSelect" class="form-control">
+                        <option value="">-- Select a Dealer --</option>
+                        <option value="all">🌟 All Dealers (Compare Prices)</option>
+                    </select>
+                </div>
+            </section>
+
+            <!-- Price Display -->
+            <section class="card" id="priceSection" style="display: none;">
+                <h2>💰 Pricing Information</h2>
+                <div id="priceDisplay"></div>
+            </section>
+
+            <!-- Loading Indicator -->
+            <div id="loadingIndicator" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Loading...</p>
+            </div>
+
+            <!-- Error Display -->
+            <div id="errorDisplay" class="error-message" style="display: none;"></div>
+        </main>
+
+        <footer>
+            <p>Microservices Final Project | Powered by IBM Code Engine</p>
+        </footer>
+    </div>
+
+    <script>
+        // API Configuration
+        // TODO: Replace these URLs with your deployed microservice URLs
+        const API_CONFIG = {
+            PRODUCT_SERVICE: 'YOUR_PRODUCT_SERVICE_URL',  // e.g., https://product-service.xxxxx.us-south.codeengine.appdomain.cloud
+            DEALER_SERVICE: 'YOUR_DEALER_PRICING_SERVICE_URL'   // e.g., https://dealer-pricing-service.xxxxx.us-south.codeengine.appdomain.cloud
+        };
+
+        // State management
+        let products = [];
+        let dealers = [];
+        let selectedProduct = null;
+
+        // DOM Elements
+        const productSelect = document.getElementById('productSelect');
+        const dealerSelect = document.getElementById('dealerSelect');
+        const dealerSection = document.getElementById('dealerSection');
+        const priceSection = document.getElementById('priceSection');
+        const priceDisplay = document.getElementById('priceDisplay');
+        const productDetails = document.getElementById('productDetails');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const errorDisplay = document.getElementById('errorDisplay');
+
+        // Initialize the application
+        async function init() {
+            await loadProducts();
+            setupEventListeners();
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            productSelect.addEventListener('change', handleProductChange);
+            dealerSelect.addEventListener('change', handleDealerChange);
+        }
+
+        // Load products from Product Service
+        async function loadProducts() {
+            showLoading(true);
+            hideError();
+            
+            try {
+                const response = await fetch(`${API_CONFIG.PRODUCT_SERVICE}/products`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success && data.products) {
+                    products = data.products;
+                    populateProductDropdown();
+                    showError('Products loaded successfully!', 'success');
+                } else {
+                    throw new Error('Invalid response format');
+                }
+            } catch (error) {
+                console.error('Error loading products:', error);
+                showError(`Failed to load products: ${error.message}. Please check if the Product Service is deployed correctly.`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Populate product dropdown
+        function populateProductDropdown() {
+            productSelect.innerHTML = '<option value="">-- Select a Product --</option>';
+            
+            products.forEach(product => {
+                const option = document.createElement('option');
+                option.value = product.id;
+                option.textContent = product.name;
+                productSelect.appendChild(option);
+            });
+        }
+
+        // Handle product selection change
+        async function handleProductChange(event) {
+            const productId = event.target.value;
+            
+            // Reset state
+            dealerSection.style.display = 'none';
+            priceSection.style.display = 'none';
+            dealerSelect.innerHTML = '<option value="">-- Select a Dealer --</option><option value="all">🌟 All Dealers (Compare Prices)</option>';
+            
+            if (!productId) {
+                productDetails.style.display = 'none';
+                return;
+            }
+            
+            // Display product details
+            selectedProduct = products.find(p => p.id == productId);
+            if (selectedProduct) {
+                document.getElementById('productName').textContent = selectedProduct.name;
+                document.getElementById('productDescription').textContent = selectedProduct.description;
+                document.getElementById('productCategory').textContent = selectedProduct.category;
+                productDetails.style.display = 'block';
+            }
+            
+            // Load dealers for this product
+            await loadDealers(productId);
+        }
+
+        // Load dealers for selected product
+        async function loadDealers(productId) {
+            showLoading(true);
+            hideError();
+            
+            try {
+                const response = await fetch(`${API_CONFIG.DEALER_SERVICE}/dealers/${productId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success && data.dealers) {
+                    dealers = data.dealers;
+                    populateDealerDropdown();
+                    dealerSection.style.display = 'block';
+                    showError('Dealers loaded successfully!', 'success');
+                } else {
+                    throw new Error('No dealers found for this product');
+                }
+            } catch (error) {
+                console.error('Error loading dealers:', error);
+                showError(`Failed to load dealers: ${error.message}. Please check if the Dealer Service is deployed correctly.`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Populate dealer dropdown
+        function populateDealerDropdown() {
+            // Keep the first two options (default and "All Dealers")
+            const defaultOptions = dealerSelect.innerHTML;
+            
+            dealers.forEach(dealer => {
+                const option = document.createElement('option');
+                option.value = dealer.dealerId;
+                option.textContent = `${dealer.dealerName} - ${dealer.location}`;
+                dealerSelect.appendChild(option);
+            });
+        }
+
+        // Handle dealer selection change
+        function handleDealerChange(event) {
+            const dealerId = event.target.value;
+            
+            if (!dealerId) {
+                priceSection.style.display = 'none';
+                return;
+            }
+            
+            if (dealerId === 'all') {
+                displayAllDealerPrices();
+            } else {
+                displaySingleDealerPrice(parseInt(dealerId));
+            }
+        }
+
+        // Display single dealer price
+        function displaySingleDealerPrice(dealerId) {
+            const dealer = dealers.find(d => d.dealerId === dealerId);
+            
+            if (!dealer) {
+                showError('Dealer not found');
+                return;
+            }
+            
+            priceDisplay.innerHTML = `
+                <div class="price-card single-dealer">
+                    <div class="dealer-info">
+                        <h3>🏪 ${dealer.dealerName}</h3>
+                        <p class="location">📍 ${dealer.location}</p>
+                    </div>
+                    <div class="price-info">
+                        <p class="price-label">Price:</p>
+                        <p class="price-value">$${dealer.price.toFixed(2)}</p>
+                    </div>
+                </div>
+            `;
+            
+            priceSection.style.display = 'block';
+            hideError();
+        }
+
+        // Display all dealer prices
+        function displayAllDealerPrices() {
+            // Sort dealers by price
+            const sortedDealers = [...dealers].sort((a, b) => a.price - b.price);
+            
+            const minPrice = Math.min(...dealers.map(d => d.price));
+            
+            let html = '<div class="comparison-grid">';
+            
+            sortedDealers.forEach(dealer => {
+                const isBestPrice = dealer.price === minPrice;
+                html += `
+                    <div class="price-card ${isBestPrice ? 'best-price' : ''}">
+                        ${isBestPrice ? '<div class="best-badge">🏆 Best Price</div>' : ''}
+                        <div class="dealer-info">
+                            <h3>${dealer.dealerName}</h3>
+                            <p class="location">📍 ${dealer.location}</p>
+                        </div>
+                        <div class="price-info">
+                            <p class="price-value">$${dealer.price.toFixed(2)}</p>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            
+            // Add price summary
+            const avgPrice = dealers.reduce((sum, d) => sum + d.price, 0) / dealers.length;
+            const maxPrice = Math.max(...dealers.map(d => d.price));
+            
+            html += `
+                <div class="price-summary">
+                    <h3>📊 Price Summary</h3>
+                    <div class="summary-grid">
+                        <div class="summary-item">
+                            <span class="summary-label">Lowest Price:</span>
+                            <span class="summary-value">$${minPrice.toFixed(2)}</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Highest Price:</span>
+                            <span class="summary-value">$${maxPrice.toFixed(2)}</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Average Price:</span>
+                            <span class="summary-value">$${avgPrice.toFixed(2)}</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Price Range:</span>
+                            <span class="summary-value">$${(maxPrice - minPrice).toFixed(2)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            priceDisplay.innerHTML = html;
+            priceSection.style.display = 'block';
+            hideError();
+        }
+
+        // Utility functions
+        function showLoading(show) {
+            loadingIndicator.style.display = show ? 'flex' : 'none';
+        }
+
+        function showError(message, type = 'error') {
+            errorDisplay.textContent = message;
+            errorDisplay.className = `error-message ${type}`;
+            errorDisplay.style.display = 'block';
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    hideError();
+                }, 3000);
+            }
+        }
+
+        function hideError() {
+            errorDisplay.style.display = 'none';
+        }
+
+        // Start the application
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
